@@ -6,7 +6,7 @@ import sys
 
 import configargparse
 
-from aider import __version__, models
+from aider import __version__
 from aider.args_formatter import (
     DotEnvFormatter,
     MarkdownHelpFormatter,
@@ -20,57 +20,15 @@ def default_env_file(git_root):
     return os.path.join(git_root, ".env") if git_root else ".env"
 
 
-def get_preparser(default_config_files, git_root):
-    parser = configargparse.ArgumentParser(
-        description="aider is GPT powered coding in your terminal",
-        add_config_file_help=True,
-        default_config_files=default_config_files,
-        config_file_parser_class=configargparse.YAMLConfigFileParser,
-        auto_env_var_prefix="AIDER_",
-    )
-
-    add_env_file(parser, git_root)
-    add_config_option(parser)
-    return parser
-
-
-def add_env_file(parser, git_root):
-    parser.add_argument(
-        "--env-file",
-        metavar="ENV_FILE",
-        default=default_env_file(git_root),
-        help="Specify the .env file to load (default: .env in git root)",
-    )
-
-
-def add_config_option(parser):
-    parser.add_argument(
-        "-c",
-        "--config",
-        is_config_file=True,
-        metavar="CONFIG_FILE",
-        help=(
-            "Specify the config file (default: search for .aider.conf.yml in git root, cwd"
-            " or home directory)"
-        ),
-    )
-
-
 def get_parser(default_config_files, git_root):
     parser = configargparse.ArgumentParser(
-        description="aider is GPT powered coding in your terminal",
+        description="aider is AI pair programming in your terminal",
         add_config_file_help=True,
         default_config_files=default_config_files,
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         auto_env_var_prefix="AIDER_",
     )
     group = parser.add_argument_group("Main")
-    group.add_argument(
-        "--llm-history-file",
-        metavar="LLM_HISTORY_FILE",
-        default=None,
-        help="Log the conversation with the LLM to this file (for example, .aider.llm.history)",
-    )
     group.add_argument(
         "files", metavar="FILE", nargs="*", help="files to edit with an LLM (optional)"
     )
@@ -86,12 +44,11 @@ def get_parser(default_config_files, git_root):
         env_var="ANTHROPIC_API_KEY",
         help="Specify the Anthropic API key",
     )
-    default_model = models.DEFAULT_MODEL_NAME
     group.add_argument(
         "--model",
         metavar="MODEL",
-        default=default_model,
-        help=f"Specify the model to use for the main chat (default: {default_model})",
+        default=None,
+        help="Specify the model to use for the main chat",
     )
     opus_model = "claude-3-opus-20240229"
     group.add_argument(
@@ -118,13 +75,21 @@ def get_parser(default_config_files, git_root):
         const=gpt_4_model,
         help=f"Use {gpt_4_model} model for the main chat",
     )
-    gpt_4o_model = "gpt-4o"
+    gpt_4o_model = "gpt-4o-2024-08-06"
     group.add_argument(
         "--4o",
         action="store_const",
         dest="model",
         const=gpt_4o_model,
         help=f"Use {gpt_4o_model} model for the main chat",
+    )
+    gpt_4o_mini_model = "gpt-4o-mini"
+    group.add_argument(
+        "--mini",
+        action="store_const",
+        dest="model",
+        const=gpt_4o_mini_model,
+        help=f"Use {gpt_4o_mini_model} model for the main chat",
     )
     gpt_4_turbo_model = "gpt-4-1106-preview"
     group.add_argument(
@@ -145,10 +110,35 @@ def get_parser(default_config_files, git_root):
         const=gpt_3_model_name,
         help=f"Use {gpt_3_model_name} model for the main chat",
     )
+    deepseek_model = "deepseek/deepseek-coder"
+    group.add_argument(
+        "--deepseek",
+        action="store_const",
+        dest="model",
+        const=deepseek_model,
+        help=f"Use {deepseek_model} model for the main chat",
+    )
+    o1_mini_model = "o1-mini"
+    group.add_argument(
+        "--o1-mini",
+        action="store_const",
+        dest="model",
+        const=o1_mini_model,
+        help=f"Use {o1_mini_model} model for the main chat",
+    )
+    o1_preview_model = "o1-preview"
+    group.add_argument(
+        "--o1-preview",
+        action="store_const",
+        dest="model",
+        const=o1_preview_model,
+        help=f"Use {o1_preview_model} model for the main chat",
+    )
 
     ##########
     group = parser.add_argument_group("Model Settings")
     group.add_argument(
+        "--list-models",
         "--models",
         metavar="MODEL",
         help="List known models which match the (partial) MODEL name",
@@ -186,13 +176,13 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--model-settings-file",
         metavar="MODEL_SETTINGS_FILE",
-        default=None,
+        default=".aider.model.settings.yml",
         help="Specify a file with aider model settings for unknown models",
     )
     group.add_argument(
         "--model-metadata-file",
         metavar="MODEL_METADATA_FILE",
-        default=None,
+        default=".aider.model.metadata.json",
         help="Specify a file with context window and costs for unknown models",
     )
     group.add_argument(
@@ -203,9 +193,17 @@ def get_parser(default_config_files, git_root):
     )
     group.add_argument(
         "--edit-format",
+        "--chat-mode",
         metavar="EDIT_FORMAT",
         default=None,
         help="Specify what edit format the LLM should use (default depends on model)",
+    )
+    group.add_argument(
+        "--architect",
+        action="store_const",
+        dest="edit_format",
+        const="architect",
+        help="Use architect edit format for the main chat",
     )
     group.add_argument(
         "--weak-model",
@@ -217,16 +215,22 @@ def get_parser(default_config_files, git_root):
         ),
     )
     group.add_argument(
+        "--editor-model",
+        metavar="EDITOR_MODEL",
+        default=None,
+        help="Specify the model to use for editor tasks (default depends on --model)",
+    )
+    group.add_argument(
+        "--editor-edit-format",
+        metavar="EDITOR_EDIT_FORMAT",
+        default=None,
+        help="Specify the edit format for the editor model (default: depends on editor model)",
+    )
+    group.add_argument(
         "--show-model-warnings",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Only work with models that have meta-data available (default: True)",
-    )
-    group.add_argument(
-        "--map-tokens",
-        type=int,
-        default=1024,
-        help="Max number of tokens to use for repo map, use 0 to disable (default: 1024)",
     )
     group.add_argument(
         "--max-chat-history-tokens",
@@ -239,7 +243,51 @@ def get_parser(default_config_files, git_root):
     )
     # This is a duplicate of the argument in the preparser and is a no-op by this time of
     # argument parsing, but it's here so that the help is displayed as expected.
-    add_env_file(group, git_root)
+    group.add_argument(
+        "--env-file",
+        metavar="ENV_FILE",
+        default=default_env_file(git_root),
+        help="Specify the .env file to load (default: .env in git root)",
+    )
+
+    ##########
+    group = parser.add_argument_group("Cache Settings")
+    group.add_argument(
+        "--cache-prompts",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable caching of prompts (default: False)",
+    )
+    group.add_argument(
+        "--cache-keepalive-pings",
+        type=int,
+        default=0,
+        help="Number of times to ping at 5min intervals to keep prompt cache warm (default: 0)",
+    )
+
+    ##########
+    group = parser.add_argument_group("Repomap Settings")
+    group.add_argument(
+        "--map-tokens",
+        type=int,
+        default=None,
+        help="Suggested number of tokens to use for repo map, use 0 to disable (default: 1024)",
+    )
+    group.add_argument(
+        "--map-refresh",
+        choices=["auto", "always", "files", "manual"],
+        default="auto",
+        help=(
+            "Control how often the repo map is refreshed. Options: auto, always, files, manual"
+            " (default: auto)"
+        ),
+    )
+    group.add_argument(
+        "--map-multiplier-no-files",
+        type=float,
+        default=2,
+        help="Multiplier for map tokens when no files are specified (default: 2)",
+    )
 
     ##########
     group = parser.add_argument_group("History Files")
@@ -266,6 +314,12 @@ def get_parser(default_config_files, git_root):
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Restore the previous chat history messages (default: False)",
+    )
+    group.add_argument(
+        "--llm-history-file",
+        metavar="LLM_HISTORY_FILE",
+        default=None,
+        help="Log the conversation with the LLM to this file (for example, .aider.llm.history)",
     )
 
     ##########
@@ -307,12 +361,50 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--tool-error-color",
         default="#FF2222",
-        help="Set the color for tool error messages (default: red)",
+        help="Set the color for tool error messages (default: #FF2222)",
+    )
+    group.add_argument(
+        "--tool-warning-color",
+        default="#FFA500",
+        help="Set the color for tool warning messages (default: #FFA500)",
     )
     group.add_argument(
         "--assistant-output-color",
         default="#0088ff",
         help="Set the color for assistant output (default: #0088ff)",
+    )
+    group.add_argument(
+        "--completion-menu-color",
+        metavar="COLOR",
+        default=None,
+        help="Set the color for the completion menu (default: terminal's default text color)",
+    )
+    group.add_argument(
+        "--completion-menu-bg-color",
+        metavar="COLOR",
+        default=None,
+        help=(
+            "Set the background color for the completion menu (default: terminal's default"
+            " background color)"
+        ),
+    )
+    group.add_argument(
+        "--completion-menu-current-color",
+        metavar="COLOR",
+        default=None,
+        help=(
+            "Set the color for the current item in the completion menu (default: terminal's default"
+            " background color)"
+        ),
+    )
+    group.add_argument(
+        "--completion-menu-current-bg-color",
+        metavar="COLOR",
+        default=None,
+        help=(
+            "Set the background color for the current item in the completion menu (default:"
+            " terminal's default text color)"
+        ),
     )
     group.add_argument(
         "--code-theme",
@@ -353,6 +445,12 @@ def get_parser(default_config_files, git_root):
         help="Specify the aider ignore file (default: .aiderignore in git root)",
     )
     group.add_argument(
+        "--subtree-only",
+        action="store_true",
+        help="Only consider files in the current subtree of the git repository",
+        default=False,
+    )
+    group.add_argument(
         "--auto-commits",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -377,18 +475,41 @@ def get_parser(default_config_files, git_root):
         help="Attribute aider commits in the git committer name (default: True)",
     )
     group.add_argument(
-        "--dry-run",
+        "--attribute-commit-message-author",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Perform a dry run without modifying files (default: False)",
+        help="Prefix commit messages with 'aider: ' if aider authored the changes (default: False)",
     )
-    group = parser.add_argument_group("Fixing and committing")
+    group.add_argument(
+        "--attribute-commit-message-committer",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Prefix all commit messages with 'aider: ' (default: False)",
+    )
     group.add_argument(
         "--commit",
         action="store_true",
         help="Commit all pending changes with a suitable commit message, then exit",
         default=False,
     )
+    group.add_argument(
+        "--commit-prompt",
+        metavar="PROMPT",
+        help="Specify a custom prompt for generating commit messages",
+    )
+    group.add_argument(
+        "--dry-run",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Perform a dry run without modifying files (default: False)",
+    )
+    group.add_argument(
+        "--skip-sanity-check-repo",
+        action="store_true",
+        help="Skip the sanity check for the git repository (default: False)",
+        default=False,
+    )
+    group = parser.add_argument_group("Fixing and committing")
     group.add_argument(
         "--lint",
         action="store_true",
@@ -412,7 +533,6 @@ def get_parser(default_config_files, git_root):
     )
     group.add_argument(
         "--test-cmd",
-        action="append",
         help="Specify command to run tests",
         default=[],
     )
@@ -432,16 +552,28 @@ def get_parser(default_config_files, git_root):
     ##########
     group = parser.add_argument_group("Other Settings")
     group.add_argument(
+        "--file",
+        action="append",
+        metavar="FILE",
+        help="specify a file to edit (can be used multiple times)",
+    )
+    group.add_argument(
+        "--read",
+        action="append",
+        metavar="FILE",
+        help="specify a read-only file (can be used multiple times)",
+    )
+    group.add_argument(
         "--vim",
         action="store_true",
         help="Use VI editing mode in the terminal (default: False)",
         default=False,
     )
     group.add_argument(
-        "--voice-language",
-        metavar="VOICE_LANGUAGE",
-        default="en",
-        help="Specify the language for voice using ISO 639-1 code (default: auto)",
+        "--chat-language",
+        metavar="CHAT_LANGUAGE",
+        default=None,
+        help="Specify the language to use in the chat (default: None, uses system settings)",
     )
     group.add_argument(
         "--version",
@@ -450,15 +582,29 @@ def get_parser(default_config_files, git_root):
         help="Show the version number and exit",
     )
     group.add_argument(
-        "--check-update",
+        "--just-check-update",
         action="store_true",
         help="Check for updates and return status in the exit code",
         default=False,
     )
     group.add_argument(
-        "--skip-check-update",
+        "--check-update",
+        action=argparse.BooleanOptionalAction,
+        help="Check for new aider versions on launch",
+        default=True,
+    )
+    group.add_argument(
+        "--install-main-branch",
         action="store_true",
-        help="Skips checking for the update when the program runs",
+        help="Install the latest version from the main branch",
+        default=False,
+    )
+    group.add_argument(
+        "--upgrade",
+        "--update",
+        action="store_true",
+        help="Upgrade aider to the latest version from PyPI",
+        default=False,
     )
     group.add_argument(
         "--apply",
@@ -466,7 +612,7 @@ def get_parser(default_config_files, git_root):
         help="Apply the changes from the given file instead of running the chat (debug)",
     )
     group.add_argument(
-        "--yes",
+        "--yes-always",
         action="store_true",
         help="Always say yes to every confirmation",
         default=None,
@@ -488,6 +634,12 @@ def get_parser(default_config_files, git_root):
         "--show-prompts",
         action="store_true",
         help="Print the system prompts and exit (debug)",
+        default=False,
+    )
+    group.add_argument(
+        "--exit",
+        action="store_true",
+        help="Do all startup activities then exit before accepting user input (debug)",
         default=False,
     )
     group.add_argument(
@@ -513,13 +665,44 @@ def get_parser(default_config_files, git_root):
         default="utf-8",
         help="Specify the encoding for input and output (default: utf-8)",
     )
-    add_config_option(group)
+    group.add_argument(
+        "-c",
+        "--config",
+        is_config_file=True,
+        metavar="CONFIG_FILE",
+        help=(
+            "Specify the config file (default: search for .aider.conf.yml in git root, cwd"
+            " or home directory)"
+        ),
+    )
     group.add_argument(
         "--gui",
         "--browser",
         action="store_true",
         help="Run aider in your browser",
         default=False,
+    )
+    group.add_argument(
+        "--suggest-shell-commands",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable suggesting shell commands (default: True)",
+    )
+
+    ##########
+    group = parser.add_argument_group("Voice Settings")
+    group.add_argument(
+        "--voice-format",
+        metavar="VOICE_FORMAT",
+        default="wav",
+        choices=["wav", "mp3", "webm"],
+        help="Audio format for voice recording (default: wav). webm and mp3 require ffmpeg",
+    )
+    group.add_argument(
+        "--voice-language",
+        metavar="VOICE_LANGUAGE",
+        default="en",
+        help="Specify the language for voice using ISO 639-1 code (default: auto)",
     )
 
     return parser

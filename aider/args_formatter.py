@@ -91,10 +91,14 @@ class YamlHelpFormatter(argparse.HelpFormatter):
     def _format_text(self, text):
         return """
 ##########################################################
-# Sample .aider.conf.yaml
+# Sample .aider.conf.yml
 # This file lists *all* the valid configuration entries.
 # Place in your home dir, or at the root of your git repo.
 ##########################################################
+
+# Note: You can only put OpenAI and Anthropic API keys in the yaml
+# config file. Keys for all APIs can be stored in a .env file
+# https://aider.chat/docs/config/dotenv.html
 
 """
 
@@ -140,8 +144,15 @@ class YamlHelpFormatter(argparse.HelpFormatter):
 
         if default:
             parts.append(f"#{switch}: {default}\n")
+        elif action.nargs in ("*", "+") or isinstance(action, argparse._AppendAction):
+            parts.append(f"#{switch}: xxx")
+            parts.append("## Specify multiple values like this:")
+            parts.append(f"#{switch}:")
+            parts.append(f"#  - xxx")
+            parts.append(f"#  - yyy")
+            parts.append(f"#  - zzz")
         else:
-            parts.append(f"#{switch}:\n")
+            parts.append(f"#{switch}: xxx\n")
 
         ###
         # parts.append(str(action))
